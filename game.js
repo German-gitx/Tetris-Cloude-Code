@@ -275,6 +275,7 @@ function init() {
 }
 
 document.addEventListener('keydown', e => {
+  if (!started) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -301,4 +302,27 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 
-init();
+// ---- Pantalla de inicio ----
+let started = false;
+const startScreen = document.getElementById('start-screen');
+const gameWrapper = document.getElementById('game-wrapper');
+const helpBox = document.getElementById('help-box');
+const byeMsg = document.getElementById('bye-msg');
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  startScreen.classList.add('hidden');
+  gameWrapper.classList.remove('hidden');
+  started = true;
+  init();
+});
+
+document.getElementById('help-btn').addEventListener('click', () => {
+  byeMsg.classList.add('hidden');
+  helpBox.classList.toggle('hidden');
+});
+
+document.getElementById('exit-btn').addEventListener('click', () => {
+  helpBox.classList.add('hidden');
+  window.close(); // solo funciona si la pestaña fue abierta por script
+  byeMsg.classList.remove('hidden');
+});

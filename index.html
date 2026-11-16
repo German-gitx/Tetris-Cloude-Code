@@ -7,7 +7,27 @@
   <link rel="stylesheet" href="style.css?v=20261116" />
 </head>
 <body>
-  <div class="wrapper">
+  <section id="start-screen" class="start-screen">
+    <h1 class="game-title">TETRIS</h1>
+    <div class="menu">
+      <button id="start-btn" class="menu-btn primary">Start</button>
+      <button id="help-btn" class="menu-btn">Ayuda</button>
+      <button id="exit-btn" class="menu-btn">Salir</button>
+    </div>
+    <div id="help-box" class="help-box hidden">
+      <p>Completa filas para sumar puntos y subir de nivel.</p>
+      <ul>
+        <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+        <li><kbd>↑</kbd> / <kbd>X</kbd> rotar</li>
+        <li><kbd>↓</kbd> bajar</li>
+        <li><kbd>Space</kbd> caída rápida</li>
+        <li><kbd>P</kbd> pausa</li>
+      </ul>
+    </div>
+    <p id="bye-msg" class="bye-msg hidden">Gracias por jugar. Ya puedes cerrar esta pestaña.</p>
+  </section>
+
+  <div class="wrapper hidden" id="game-wrapper">
     <div class="game-container">
       <canvas id="board" width="300" height="600"></canvas>
 
