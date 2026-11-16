@@ -150,3 +150,80 @@ kbd {
 #restart-btn:hover {
   background: #9bbdff;
 }
+
+.hidden {
+  display: none !important;
+}
+
+/* ---- Pantalla de inicio ---- */
+.start-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+.game-title {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: 12px;
+  padding-left: 12px;
+  color: #7aa2f7;
+  text-shadow: 0 0 24px rgba(122, 162, 247, 0.5);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 220px;
+}
+
+.menu-btn {
+  background: #22223a;
+  color: #e0e0e0;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.menu-btn:hover {
+  background: #2e2e4d;
+}
+
+.menu-btn.primary {
+  background: #7aa2f7;
+  color: #0f0f17;
+  border: none;
+}
+
+.menu-btn.primary:hover {
+  background: #9bbdff;
+}
+
+.help-box {
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.help-box ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.bye-msg {
+  font-size: 14px;
+  color: #7aa2f7;
+}
