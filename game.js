@@ -26,6 +26,18 @@ const PIECES = [
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
 ];
 
+const GHOST = 'ghost';
+
+// ---- Tema claro/oscuro ----
+const themeVars = { grid: '#22222e', shine: 'rgba(255,255,255,0.12)', ghostAlpha: 0.2 };
+
+function readThemeVars() {
+  const cs = getComputedStyle(document.documentElement);
+  themeVars.grid = cs.getPropertyValue('--grid').trim() || themeVars.grid;
+  themeVars.shine = cs.getPropertyValue('--block-shine').trim() || themeVars.shine;
+  themeVars.ghostAlpha = parseFloat(cs.getPropertyValue('--ghost-alpha')) || themeVars.ghostAlpha;
+}
+
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
 const canvas = document.getElementById('board');
@@ -159,17 +171,17 @@ function updateHUD() {
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
   const color = COLORS[colorIndex];
-  context.globalAlpha = alpha ?? 1;
+  context.globalAlpha = alpha === GHOST ? themeVars.ghostAlpha : (alpha ?? 1);
   context.fillStyle = color;
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
   // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillStyle = themeVars.shine;
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
   context.globalAlpha = 1;
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = themeVars.grid;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -199,7 +211,7 @@ function draw() {
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
       if (current.shape[r][c])
-        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, GHOST);
 
   // current piece
   for (let r = 0; r < current.shape.length; r++)
@@ -326,3 +338,23 @@ document.getElementById('exit-btn').addEventListener('click', () => {
   window.close(); // solo funciona si la pestaña fue abierta por script
   byeMsg.classList.remove('hidden');
 });
+
+// ---- Toggle claro/oscuro (oscuro por defecto) ----
+const themeToggle = document.getElementById('theme-toggle');
+const themeLabel = document.getElementById('theme-label');
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const light = theme === 'light';
+  themeToggle.setAttribute('aria-checked', String(light));
+  themeLabel.textContent = light ? 'CLARO' : 'OSCURO';
+  readThemeVars();
+  if (started && current && next) { draw(); drawNext(); }
+}
+
+themeToggle.addEventListener('click', () => {
+  applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  themeToggle.blur(); // evita que Space/Enter vuelvan a activar el switch
+});
+
+applyTheme('dark');
