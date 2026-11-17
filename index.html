@@ -11,6 +11,8 @@
     <span id="theme-label">OSCURO</span><span class="track"></span>
   </button>
 
+  <div id="skin-picker"></div> <!-- [UNIDAD 3] selector de skin -->
+
   <section id="start-screen" class="start-screen">
     <h1 class="game-title">TETRIS</h1>
     <div class="menu">
@@ -29,6 +31,7 @@
         <li><kbd>P</kbd> pausa</li>
       </ul>
     </div>
+    <div id="records-start"></div> <!-- [UNIDAD 2] tabla de récords en inicio -->
     <p id="bye-msg" class="bye-msg hidden">Gracias por jugar. Ya puedes cerrar esta pestaña.</p>
   </section>
 
@@ -92,9 +95,12 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
+        <div id="records-gameover"></div> <!-- [UNIDAD 2] nombre + tabla de récords -->
         <button id="restart-btn">Reiniciar</button>
       </div>
     </div>
+
+    <div id="pause-menu" class="overlay hidden"></div> <!-- [UNIDAD 1] menú de pausa -->
   </div>
 
   <script src="game.js?v=20261118"></script>

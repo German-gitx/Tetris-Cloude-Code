@@ -57,6 +57,15 @@ function readThemeVars() {
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
+// ---- Puntos de enganche (cada funcionalidad añade sus funciones con HOOKS.<evento>.push(fn)) ----
+const HOOKS = {
+  init: [],      // () al final de init(): nueva partida
+  gameOver: [],  // () al final de endGame()
+  locked: [],    // (cleared) tras fijar una pieza y limpiar líneas
+  key: [],       // (e) al inicio del keydown; devolver true consume la tecla
+};
+const runHooks = (name, ...args) => HOOKS[name].forEach(fn => fn(...args));
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -180,7 +189,7 @@ function clearLines() {
     while (board.length < ROWS) board.unshift(new Array(COLS).fill(0));
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level;
-    level = Math.floor(lines / 10) + 1;
+    level = Math.max(getStartLevel(), Math.floor(lines / 10) + 1);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     fx.push({ kind: 'lines', rows: full, t: 0, dur: 300 });
     // Solo las filas completas cuentan para ganar piezas especiales.
@@ -299,7 +308,8 @@ function lockPiece() {
   freezeMs = 0; // al fijar la pieza congelada, termina el efecto (Congelar la renueva abajo)
   merge();
   const freeze = piece.special ? applySpecial(piece) : false; // una sola vez, al fijarse
-  clearLines(); // tras cualquier efecto: comprobar filas completas
+  const cleared = clearLines(); // tras cualquier efecto: comprobar filas completas
+  runHooks('locked', cleared);
   spawn();
   if (freeze && !gameOver) freezeMs = FREEZE_DURATION_MS;
   updateHUD();
@@ -335,6 +345,11 @@ function updateFreezeUI() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
+  drawCell(context, x, y, colorIndex, size, alpha); // la skin activa decide el aspecto (ver sección Skins)
+}
+
+// Dibujo de un bloque con el estilo Retro (por defecto). La unidad de Skins lo sustituye por la skin activa.
+function drawCell(context, x, y, colorIndex, size, alpha) {
   context.globalAlpha = alpha === GHOST ? themeVars.ghostAlpha : (alpha ?? 1);
   if (colorIndex === WILD) {
     // comodín: degradado arcoíris con marca ✦
@@ -570,6 +585,7 @@ function endGame() {
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
   overlay.classList.remove('hidden');
+  runHooks('gameOver');
 }
 
 function togglePause() {
@@ -616,10 +632,10 @@ function init() {
   board = createBoard();
   score = 0;
   lines = 0;
-  level = 1;
+  level = getStartLevel();
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   lastTime = performance.now();
   // limpiar efectos activos, temporizadores y recompensas pendientes
@@ -635,9 +651,11 @@ function init() {
   overlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
+  runHooks('init');
 }
 
 document.addEventListener('keydown', e => {
+  if (HOOKS.key.some(fn => fn(e))) return;
   if (!started) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
@@ -733,3 +751,11 @@ themeToggle.addEventListener('click', () => {
 });
 
 applyTheme('dark');
+
+// ==== [UNIDAD 1] Menú de pausa ====
+// Valor por defecto; la unidad de pausa lo sustituye por el nivel elegido en el menú.
+function getStartLevel() { return 1; }
+
+// ==== [UNIDAD 2] Récords ====
+
+// ==== [UNIDAD 3] Skins ====
