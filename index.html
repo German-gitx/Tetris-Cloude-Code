@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tetris</title>
-  <link rel="stylesheet" href="style.css?v=20261117" />
+  <link rel="stylesheet" href="style.css?v=20261118" />
 </head>
 <body>
   <button id="theme-toggle" class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Modo claro" tabindex="-1">
@@ -20,6 +20,7 @@
     </div>
     <div id="help-box" class="help-box hidden">
       <p>Completa filas para sumar puntos y subir de nivel.</p>
+      <p>Cada 10 líneas llega una pieza especial con un poder aleatorio (💣 ⚡ 🎨 🌀 ❄️).</p>
       <ul>
         <li><kbd>←</kbd><kbd>→</kbd> mover</li>
         <li><kbd>↑</kbd> / <kbd>X</kbd> rotar</li>
@@ -33,6 +34,18 @@
 
   <div class="wrapper hidden" id="game-wrapper">
     <div class="game-container">
+      <aside class="legend">
+        <span class="label">PODERES</span>
+        <p class="legend-note">Cada 10 líneas, la siguiente pieza es especial. Actúa al fijarse, desde su bloque con icono.</p>
+        <ul>
+          <li><span class="ico">💣</span><b>Bomba</b> borra un área 3×3</li>
+          <li><span class="ico">⚡</span><b>Rayo</b> borra su fila y columna</li>
+          <li><span class="ico">🎨</span><b>Tinte</b> su color pasa a comodín ✦</li>
+          <li><span class="ico">🌀</span><b>Gravedad</b> los bloques caen sin huecos</li>
+          <li><span class="ico">❄️</span><b>Congelar</b> la siguiente pieza no cae solo 5 s</li>
+        </ul>
+      </aside>
+
       <canvas id="board" width="300" height="600"></canvas>
 
       <aside class="panel">
@@ -52,6 +65,14 @@
         <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">ESPECIAL</span>
+          <span class="special-left" id="special-left">Faltan 10 líneas</span>
+          <span class="special-queue" id="special-queue"></span>
+          <span class="freeze-indicator hidden" id="freeze-indicator">❄ <span id="freeze-time">5.0</span>s</span>
+          <span class="debug-badge hidden" id="debug-badge">DEBUG: 1-5 poder · 6 cola · 7 basura</span>
         </div>
 
         <div class="panel-section controls">
@@ -76,6 +97,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=20261117"></script>
+  <script src="game.js?v=20261118"></script>
 </body>
 </html>

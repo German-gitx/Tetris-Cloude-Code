@@ -13,7 +13,24 @@ const COLORS = [
   '#e57373', // Z - red
   '#90caf9', // J - pale blue
   '#ffb74d', // L - orange
+  '#cfd8dc', // 8 - comodín (se dibuja con degradado, ver drawBlock)
 ];
+
+// ---- Piezas especiales ----
+const SPECIAL_EVERY_LINES = 10;   // líneas completas necesarias para ganar una pieza especial
+const FREEZE_DURATION_MS = 5000;  // duración del efecto Congelar (tiempo de juego activo)
+const WILD = 8;                   // valor de celda para los bloques comodín (Tinte)
+const DEBUG_SPECIALS = false;     // true, o añadir ?debug a la URL, activa el modo depuración
+
+const SPECIAL_EFFECTS = {
+  bomb:    { icon: '💣', name: 'Bomba' },
+  ray:     { icon: '⚡', name: 'Rayo' },
+  tint:    { icon: '🎨', name: 'Tinte' },
+  gravity: { icon: '🌀', name: 'Gravedad' },
+  freeze:  { icon: '❄️', name: 'Congelar' },
+};
+const EFFECT_KEYS = Object.keys(SPECIAL_EFFECTS);
+const DEBUG = DEBUG_SPECIALS || /[?&]debug/.test(location.search);
 
 const PIECES = [
   null,
@@ -51,17 +68,60 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const specialLeftEl = document.getElementById('special-left');
+const specialQueueEl = document.getElementById('special-queue');
+const freezeIndicator = document.getElementById('freeze-indicator');
+const freezeTimeEl = document.getElementById('freeze-time');
+const debugBadge = document.getElementById('debug-badge');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+// Estado de piezas especiales
+let pendingSpecials = [];   // efectos ganados y aún no entregados (en orden)
+let linesTowardSpecial = 0; // líneas completas acumuladas hacia la próxima pieza especial
+let freezeMs = 0;           // tiempo restante de Congelar (ms de juego activo)
+let fx = [];                // animaciones breves en curso
+let lastFreezeText = '';
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
 }
 
-function randomPiece() {
-  const type = Math.floor(Math.random() * 7) + 1;
+// Bloque "núcleo": la celda ocupada más cercana al centro de la forma (lleva el icono).
+function coreCell(shape) {
+  let sr = 0, sc = 0, n = 0;
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++)
+      if (shape[r][c]) { sr += r; sc += c; n++; }
+  const cr = sr / n, cc = sc / n;
+  let best = null, bestD = Infinity;
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++) {
+      if (!shape[r][c]) continue;
+      const d = (r - cr) ** 2 + (c - cc) ** 2;
+      if (d < bestD) { bestD = d; best = { r, c }; }
+    }
+  return best;
+}
+
+function makePiece(type, effect) {
   const shape = PIECES[type].map(row => [...row]);
-  return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+  const piece = { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+  if (effect) piece.special = { effect, ...coreCell(shape) };
+  return piece;
+}
+
+function randomType() {
+  return Math.floor(Math.random() * 7) + 1;
+}
+
+function randomPiece() {
+  return makePiece(randomType());
+}
+
+// Entrega en orden las recompensas pendientes; si no hay, pieza normal.
+function nextPiece() {
+  if (pendingSpecials.length) return makePiece(randomType(), pendingSpecials.shift());
+  return randomPiece();
 }
 
 function collide(shape, ox, oy) {
@@ -91,6 +151,12 @@ function tryRotate() {
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
     if (!collide(rotated, current.x + kick, current.y)) {
+      if (current.special) {
+        // mismo mapeo que rotateCW: (r, c) -> (c, filas - 1 - r)
+        const { r, c } = current.special;
+        current.special.r = c;
+        current.special.c = current.shape.length - 1 - r;
+      }
       current.shape = rotated;
       current.x += kick;
       return;
@@ -106,22 +172,103 @@ function merge() {
 }
 
 function clearLines() {
-  let cleared = 0;
-  for (let r = ROWS - 1; r >= 0; r--) {
-    if (board[r].every(v => v !== 0)) {
-      board.splice(r, 1);
-      board.unshift(new Array(COLS).fill(0));
-      cleared++;
-      r++;
-    }
-  }
+  const full = [];
+  for (let r = 0; r < ROWS; r++) if (board[r].every(v => v !== 0)) full.push(r);
+  const cleared = full.length;
   if (cleared) {
+    board = board.filter((_, r) => !full.includes(r));
+    while (board.length < ROWS) board.unshift(new Array(COLS).fill(0));
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+    fx.push({ kind: 'lines', rows: full, t: 0, dur: 300 });
+    // Solo las filas completas cuentan para ganar piezas especiales.
+    linesTowardSpecial += cleared;
+    while (linesTowardSpecial >= SPECIAL_EVERY_LINES) {
+      linesTowardSpecial -= SPECIAL_EVERY_LINES;
+      pendingSpecials.push(EFFECT_KEYS[Math.floor(Math.random() * EFFECT_KEYS.length)]);
+    }
     updateHUD();
   }
+  return cleared;
+}
+
+// ---- Efectos especiales (operan sobre `board`, devuelven datos para animar) ----
+function effectBomb(cr, cc) {
+  const cells = [];
+  for (let r = cr - 1; r <= cr + 1; r++)
+    for (let c = cc - 1; c <= cc + 1; c++) {
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+      if (board[r][c]) { cells.push({ r, c, v: board[r][c] }); board[r][c] = 0; }
+    }
+  return cells;
+}
+
+function effectRay(cr, cc) {
+  const cells = [];
+  for (let c = 0; c < COLS; c++)
+    if (board[cr][c]) { cells.push({ r: cr, c, v: board[cr][c] }); board[cr][c] = 0; }
+  for (let r = 0; r < ROWS; r++)
+    if (board[r][cc]) { cells.push({ r, c: cc, v: board[r][cc] }); board[r][cc] = 0; }
+  return cells;
+}
+
+// Convierte en comodines todos los bloques del color `type` (y re-marca los comodines existentes).
+function effectTint(type) {
+  const cells = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] === type || board[r][c] === WILD) {
+        cells.push({ r, c, v: board[r][c] });
+        board[r][c] = WILD;
+      }
+  return cells;
+}
+
+// Cada bloque cae dentro de su columna hasta no dejar huecos; conserva el orden vertical.
+function effectGravity() {
+  const moves = [];
+  for (let c = 0; c < COLS; c++) {
+    let write = ROWS - 1;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      const v = board[r][c];
+      if (!v) continue;
+      if (r !== write) {
+        board[write][c] = v;
+        board[r][c] = 0;
+        moves.push({ c, from: r, to: write });
+      }
+      write--;
+    }
+  }
+  return moves;
+}
+
+// Activa el efecto de una pieza especial ya fijada. Devuelve true si es Congelar.
+function applySpecial(piece) {
+  const { effect, r, c } = piece.special;
+  const cr = piece.y + r, cc = piece.x + c;
+  const label = SPECIAL_EFFECTS[effect];
+  fx.push({ kind: 'text', text: `${label.icon} ${label.name}`, t: 0, dur: 900 });
+  switch (effect) {
+    case 'bomb':
+      fx.push({ kind: 'bomb', cr, cc, cells: effectBomb(cr, cc), t: 0, dur: 450 });
+      break;
+    case 'ray':
+      fx.push({ kind: 'ray', cr, cc, cells: effectRay(cr, cc), t: 0, dur: 400 });
+      break;
+    case 'tint':
+      fx.push({ kind: 'tint', cells: effectTint(piece.type), t: 0, dur: 600 });
+      break;
+    case 'gravity':
+      fx.push({ kind: 'gravity', moves: effectGravity(), t: 0, dur: 450 });
+      break;
+    case 'freeze':
+      fx.push({ kind: 'freeze', t: 0, dur: 600 });
+      return true;
+  }
+  return false;
 }
 
 function ghostY() {
@@ -148,14 +295,19 @@ function softDrop() {
 }
 
 function lockPiece() {
+  const piece = current;
+  freezeMs = 0; // al fijar la pieza congelada, termina el efecto (Congelar la renueva abajo)
   merge();
-  clearLines();
+  const freeze = piece.special ? applySpecial(piece) : false; // una sola vez, al fijarse
+  clearLines(); // tras cualquier efecto: comprobar filas completas
   spawn();
+  if (freeze && !gameOver) freezeMs = FREEZE_DURATION_MS;
+  updateHUD();
 }
 
 function spawn() {
   current = next;
-  next = randomPiece();
+  next = nextPiece();
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
@@ -166,18 +318,200 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  const left = SPECIAL_EVERY_LINES - linesTowardSpecial;
+  specialLeftEl.textContent = left === 1 ? 'Falta 1 línea' : `Faltan ${left} líneas`;
+  specialQueueEl.textContent = pendingSpecials.length
+    ? 'En cola: ' + pendingSpecials.map(k => SPECIAL_EFFECTS[k].icon).join(' ')
+    : '';
+}
+
+function updateFreezeUI() {
+  const text = freezeMs > 0 ? (freezeMs / 1000).toFixed(1) : '';
+  if (text === lastFreezeText) return;
+  lastFreezeText = text;
+  freezeIndicator.classList.toggle('hidden', freezeMs <= 0);
+  freezeTimeEl.textContent = text;
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
   context.globalAlpha = alpha === GHOST ? themeVars.ghostAlpha : (alpha ?? 1);
-  context.fillStyle = color;
+  if (colorIndex === WILD) {
+    // comodín: degradado arcoíris con marca ✦
+    const g = context.createLinearGradient(x * size, y * size, (x + 1) * size, (y + 1) * size);
+    g.addColorStop(0, '#ff8a80');
+    g.addColorStop(0.25, '#ffd54f');
+    g.addColorStop(0.5, '#81c784');
+    g.addColorStop(0.75, '#4dd0e1');
+    g.addColorStop(1, '#ba68c8');
+    context.fillStyle = g;
+  } else {
+    context.fillStyle = COLORS[colorIndex];
+  }
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
   // highlight
   context.fillStyle = themeVars.shine;
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  if (colorIndex === WILD) {
+    context.fillStyle = 'rgba(255,255,255,0.9)';
+    context.font = `${Math.round(size * 0.5)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText('✦', (x + 0.5) * size, (y + 0.5) * size + 1);
+  }
   context.globalAlpha = 1;
+}
+
+// Dibuja una pieza (normal o especial). (ox, oy) = celda de la esquina superior izquierda de la forma.
+function drawPiece(context, piece, ox, oy, size, alpha) {
+  const pulse = 0.55 + 0.45 * Math.sin(performance.now() / 180);
+  for (let r = 0; r < piece.shape.length; r++)
+    for (let c = 0; c < piece.shape[r].length; c++) {
+      if (!piece.shape[r][c]) continue;
+      drawBlock(context, ox + c, oy + r, piece.shape[r][c], size, alpha);
+      if (!piece.special || alpha === GHOST) continue;
+      // borde dorado pulsante en todos los bloques especiales
+      context.strokeStyle = `rgba(255, 215, 0, ${pulse})`;
+      context.lineWidth = 2;
+      context.strokeRect((ox + c) * size + 2, (oy + r) * size + 2, size - 4, size - 4);
+      if (piece.special.r === r && piece.special.c === c) {
+        // núcleo: disco oscuro con el icono del poder (centro del efecto)
+        const cx = (ox + c + 0.5) * size, cy = (oy + r + 0.5) * size;
+        context.fillStyle = 'rgba(15, 15, 25, 0.8)';
+        context.beginPath();
+        context.arc(cx, cy, size * 0.36, 0, Math.PI * 2);
+        context.fill();
+        context.font = `${Math.round(size * 0.46)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillStyle = '#fff';
+        context.fillText(SPECIAL_EFFECTS[piece.special.effect].icon, cx, cy + 1);
+      }
+    }
+}
+
+// ---- Animaciones breves ----
+function updateFx(dt) {
+  for (const f of fx) f.t += dt;
+  fx = fx.filter(f => f.t < f.dur);
+}
+
+function fxColor(v) {
+  return v === WILD ? '#ffffff' : COLORS[v];
+}
+
+function drawFragments(cells, p) {
+  const s = BLOCK * (1 - p);
+  for (const { r, c, v } of cells) {
+    ctx.globalAlpha = 1 - p;
+    ctx.fillStyle = fxColor(v);
+    ctx.fillRect((c + 0.5) * BLOCK - s / 2, (r + 0.5) * BLOCK - s / 2, s, s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFx() {
+  const W = COLS * BLOCK, H = ROWS * BLOCK;
+  ctx.save();
+  for (const f of fx) {
+    const p = f.t / f.dur;
+    switch (f.kind) {
+      case 'bomb': {
+        drawFragments(f.cells, p);
+        const cx = (f.cc + 0.5) * BLOCK, cy = (f.cr + 0.5) * BLOCK;
+        const rad = BLOCK * (0.6 + 1.6 * p);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        g.addColorStop(0, `rgba(255, 245, 200, ${1 - p})`);
+        g.addColorStop(0.5, `rgba(255, 140, 0, ${0.8 * (1 - p)})`);
+        g.addColorStop(1, 'rgba(255, 80, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+        break;
+      }
+      case 'ray': {
+        drawFragments(f.cells, p);
+        const th = BLOCK * (1 - p);
+        ctx.globalAlpha = 1 - p;
+        ctx.fillStyle = '#fff59d';
+        ctx.fillRect(0, (f.cr + 0.5) * BLOCK - th / 2, W, th);
+        ctx.fillRect((f.cc + 0.5) * BLOCK - th / 2, 0, th, H);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, (f.cr + 0.5) * BLOCK - th / 6, W, th / 3);
+        ctx.fillRect((f.cc + 0.5) * BLOCK - th / 6, 0, th / 3, H);
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'tint': {
+        for (const { r, c } of f.cells) {
+          const hue = (f.t / 2 + r * 20 + c * 20) % 360;
+          ctx.globalAlpha = 0.8 * (1 - p);
+          ctx.fillStyle = `hsl(${hue}, 100%, 70%)`;
+          ctx.fillRect(c * BLOCK, r * BLOCK, BLOCK, BLOCK);
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'gravity': {
+        for (const { c, from, to } of f.moves) {
+          const y0 = from * BLOCK, y1 = (to + 1) * BLOCK;
+          const g = ctx.createLinearGradient(0, y0, 0, y1);
+          g.addColorStop(0, 'rgba(129, 199, 132, 0)');
+          g.addColorStop(1, `rgba(129, 199, 132, ${0.7 * (1 - p)})`);
+          ctx.fillStyle = g;
+          ctx.fillRect(c * BLOCK + 6, y0, BLOCK - 12, y1 - y0);
+        }
+        break;
+      }
+      case 'freeze': {
+        ctx.fillStyle = `rgba(140, 210, 255, ${0.35 * (1 - p)})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = `rgba(190, 235, 255, ${1 - p})`;
+        ctx.lineWidth = 6;
+        ctx.strokeRect(3, 3, W - 6, H - 6);
+        break;
+      }
+      case 'lines': {
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * (1 - p)})`;
+        for (const r of f.rows) ctx.fillRect(0, r * BLOCK, W, BLOCK);
+        break;
+      }
+      case 'text': {
+        ctx.globalAlpha = Math.min(1, 2 * (1 - p));
+        ctx.font = 'bold 22px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        const y = 4 * BLOCK - p * BLOCK;
+        ctx.strokeText(f.text, W / 2, y);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText(f.text, W / 2, y);
+        ctx.globalAlpha = 1;
+        break;
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawFreezeOverlay() {
+  if (freezeMs <= 0) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(140, 210, 255, 0.08)';
+  ctx.fillRect(0, 0, COLS * BLOCK, ROWS * BLOCK);
+  ctx.strokeStyle = 'rgba(140, 210, 255, 0.8)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, COLS * BLOCK - 3, ROWS * BLOCK - 3);
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  const t = `❄ ${(freezeMs / 1000).toFixed(1)}s`;
+  ctx.strokeText(t, COLS * BLOCK / 2, 6);
+  ctx.fillStyle = '#b3e5fc';
+  ctx.fillText(t, COLS * BLOCK / 2, 6);
+  ctx.restore();
 }
 
 function drawGrid() {
@@ -214,9 +548,11 @@ function draw() {
         drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, GHOST);
 
   // current piece
-  for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++)
-      drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+  drawPiece(ctx, current, current.x, current.y, BLOCK);
+
+  drawFreezeOverlay();
+  drawFx();
+  if (next.special) drawNext(); // repinta para animar el borde pulsante
 }
 
 function drawNext() {
@@ -225,9 +561,7 @@ function drawNext() {
   const shape = next.shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
-  for (let r = 0; r < shape.length; r++)
-    for (let c = 0; c < shape[r].length; c++)
-      drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+  drawPiece(nextCtx, next, offX, offY, NB);
 }
 
 function endGame() {
@@ -242,7 +576,8 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
-    lastTime = performance.now();
+    overlay.classList.add('hidden');
+    lastTime = performance.now(); // dt=0 al reanudar: Congelar y animaciones no avanzan en pausa
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
@@ -255,13 +590,21 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
-  dropAccum += dt;
-  if (dropAccum >= dropInterval) {
-    dropAccum = 0;
-    if (!collide(current.shape, current.x, current.y + 1)) {
-      current.y++;
-    } else {
-      lockPiece();
+  const activeDt = Math.min(dt, 250); // pestaña en segundo plano no consume Congelar/animaciones
+  updateFx(activeDt);
+  if (freezeMs > 0) {
+    freezeMs = Math.max(0, freezeMs - activeDt);
+    dropAccum = 0; // sin caída automática mientras dura Congelar
+    updateFreezeUI();
+  } else {
+    dropAccum += dt;
+    if (dropAccum >= dropInterval) {
+      dropAccum = 0;
+      if (!collide(current.shape, current.x, current.y + 1)) {
+        current.y++;
+      } else {
+        lockPiece();
+      }
     }
   }
   draw();
@@ -279,6 +622,13 @@ function init() {
   dropInterval = 1000;
   dropAccum = 0;
   lastTime = performance.now();
+  // limpiar efectos activos, temporizadores y recompensas pendientes
+  pendingSpecials = [];
+  linesTowardSpecial = 0;
+  freezeMs = 0;
+  fx = [];
+  lastFreezeText = '';
+  freezeIndicator.classList.add('hidden');
   next = randomPiece();
   spawn();
   updateHUD();
@@ -291,6 +641,7 @@ document.addEventListener('keydown', e => {
   if (!started) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
+  if (DEBUG && debugKey(e.code)) { updateHUD(); return; }
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) current.x--;
@@ -314,6 +665,29 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+
+// ---- Modo depuración (?debug en la URL) ----
+// 1-5: la pieza actual pasa a ser especial (bomba, rayo, tinte, gravedad, congelar)
+// 6: encola una recompensa aleatoria · 7: añade 3 filas de basura con un hueco
+function debugKey(code) {
+  const m = /^Digit([1-7])$/.exec(code);
+  if (!m) return false;
+  const n = Number(m[1]);
+  if (n <= 5) {
+    current.special = { effect: EFFECT_KEYS[n - 1], ...coreCell(current.shape) };
+  } else if (n === 6) {
+    pendingSpecials.push(EFFECT_KEYS[Math.floor(Math.random() * EFFECT_KEYS.length)]);
+  } else {
+    for (let i = 0; i < 3 && board[0].every(v => v === 0); i++) {
+      board.shift();
+      const hole = Math.floor(Math.random() * COLS);
+      board.push(Array.from({ length: COLS }, (_, c) => (c === hole ? 0 : randomType())));
+    }
+    if (collide(current.shape, current.x, current.y)) current.y = 0;
+  }
+  return true;
+}
+if (DEBUG) debugBadge.classList.remove('hidden');
 
 // ---- Pantalla de inicio ----
 let started = false;

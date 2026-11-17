@@ -140,6 +140,22 @@ Cuando una pieza recién generada ya colisiona al aparecer (`spawn`), se dispara
 
 ---
 
+## Piezas especiales
+
+Cada **10 líneas completas** (constante `SPECIAL_EVERY_LINES` en `game.js`) la siguiente pieza generada es especial, con un poder aleatorio. Se reconoce por el borde dorado y el icono en su bloque central, que es el centro del efecto. El poder se activa una sola vez, al fijarse la pieza, y después se comprueban las filas completas.
+
+| Icono | Poder | Efecto |
+|---|---|---|
+| 💣 | Bomba | Borra el área 3×3 centrada en el bloque del icono |
+| ⚡ | Rayo | Borra la fila y la columna del bloque del icono |
+| 🎨 | Tinte | Los bloques fijados del color de la pieza pasan a comodines ✦ |
+| 🌀 | Gravedad | Cada bloque cae en su columna hasta no dejar huecos |
+| ❄️ | Congelar | La siguiente pieza no cae sola durante 5 s de juego activo |
+
+Solo las filas completas cuentan para líneas, nivel y nuevas piezas especiales. Si se ganan varias a la vez, se entregan en orden.
+
+**Modo depuración:** abre `index.html?debug`. Teclas `1`–`5` convierten la pieza actual en Bomba, Rayo, Tinte, Gravedad o Congelar; `6` encola una recompensa; `7` añade 3 filas de basura.
+
 ## Tecnologías
 
 - **HTML5** — marcado y dos elementos `<canvas>` (tablero y vista previa).
