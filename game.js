@@ -592,14 +592,12 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
-    overlay.classList.add('hidden');
+    pauseMenu.classList.add('hidden');
     lastTime = performance.now(); // dt=0 al reanudar: Congelar y animaciones no avanzan en pausa
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    openPauseMenu();
   }
 }
 
@@ -649,6 +647,7 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
   runHooks('init');
@@ -657,7 +656,7 @@ function init() {
 document.addEventListener('keydown', e => {
   if (HOOKS.key.some(fn => fn(e))) return;
   if (!started) return;
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   if (DEBUG && debugKey(e.code)) { updateHUD(); return; }
   switch (e.code) {
@@ -753,8 +752,120 @@ themeToggle.addEventListener('click', () => {
 applyTheme('dark');
 
 // ==== [UNIDAD 1] Menú de pausa ====
-// Valor por defecto; la unidad de pausa lo sustituye por el nivel elegido en el menú.
-function getStartLevel() { return 1; }
+const pauseMenu = document.getElementById('pause-menu');
+const START_LEVEL_KEY = 'tetris.startLevel';
+const CONTROLS = [
+  ['← →', 'Mover'], ['↓', 'Bajar'], ['↑ / X', 'Rotar'], ['Espacio', 'Caída rápida'], ['P / Esc', 'Pausa'],
+];
+
+function getStartLevel() {
+  let n = 1;
+  try { n = parseInt(localStorage.getItem(START_LEVEL_KEY), 10); } catch (e) { n = 1; }
+  return n >= 1 && n <= 10 ? n : 1;
+}
+
+function setStartLevel(n) {
+  n = Math.min(10, Math.max(1, n));
+  try { localStorage.setItem(START_LEVEL_KEY, String(n)); } catch (e) { /* sin almacenamiento */ }
+  pmLevelValue.textContent = n;
+}
+
+function pmButton(label) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pm-item';
+  b.textContent = label;
+  return b;
+}
+
+const pmBox = document.createElement('div');
+pmBox.className = 'overlay-box pm-box';
+const pmTitle = document.createElement('p');
+pmTitle.id = 'pm-title';
+pmTitle.textContent = 'PAUSA';
+const pmResume = pmButton('Reanudar');
+const pmRestart = pmButton('Reiniciar');
+const pmControlsBtn = pmButton('Ver controles');
+const pmControlsList = document.createElement('ul');
+pmControlsList.className = 'pm-controls hidden';
+CONTROLS.forEach(([k, d]) => {
+  const li = document.createElement('li');
+  const kbd = document.createElement('kbd');
+  kbd.textContent = k;
+  li.append(kbd, ' ' + d);
+  pmControlsList.appendChild(li);
+});
+const pmLevelRow = document.createElement('div');
+pmLevelRow.className = 'pm-item pm-level';
+const pmLevelLabel = document.createElement('span');
+pmLevelLabel.textContent = 'Nivel inicial';
+const pmLevelDown = document.createElement('button');
+pmLevelDown.type = 'button';
+pmLevelDown.textContent = '−';
+const pmLevelValue = document.createElement('span');
+pmLevelValue.className = 'pm-level-value';
+const pmLevelUp = document.createElement('button');
+pmLevelUp.type = 'button';
+pmLevelUp.textContent = '+';
+pmLevelRow.append(pmLevelLabel, pmLevelDown, pmLevelValue, pmLevelUp);
+pmBox.append(pmTitle, pmResume, pmRestart, pmControlsBtn, pmControlsList, pmLevelRow);
+pauseMenu.appendChild(pmBox);
+
+const pmItems = [pmResume, pmRestart, pmControlsBtn, pmLevelRow];
+let pmIndex = 0;
+
+function pmSelect(i) {
+  pmIndex = (i + pmItems.length) % pmItems.length;
+  pmItems.forEach((el, n) => el.classList.toggle('selected', n === pmIndex));
+}
+
+function pmRestartGame() { init(); }
+function pmToggleControls() { pmControlsList.classList.toggle('hidden'); }
+function pmChangeLevel(d) { setStartLevel(getStartLevel() + d); }
+
+function pmActivate(i) {
+  if (i === 0) togglePause();
+  else if (i === 1) pmRestartGame();
+  else if (i === 2) pmToggleControls();
+}
+
+function openPauseMenu() {
+  pmControlsList.classList.add('hidden');
+  pmLevelValue.textContent = getStartLevel();
+  pmSelect(0);
+  pauseMenu.classList.remove('hidden');
+}
+
+pmResume.addEventListener('click', () => pmActivate(0));
+pmRestart.addEventListener('click', () => pmActivate(1));
+pmControlsBtn.addEventListener('click', () => pmActivate(2));
+pmLevelDown.addEventListener('click', () => pmChangeLevel(-1));
+pmLevelUp.addEventListener('click', () => pmChangeLevel(1));
+pmItems.forEach((el, i) => el.addEventListener('mouseenter', () => pmSelect(i)));
+
+// Teclas mantenidas: tras reanudar, se descartan repeticiones de teclas que no se pulsaron con el juego activo
+const pmFreshKeys = new Set();
+document.addEventListener('keyup', e => pmFreshKeys.delete(e.code));
+
+HOOKS.key.push(e => {
+  const menuOpen = !pauseMenu.classList.contains('hidden');
+  if (!menuOpen) {
+    if (!e.repeat) pmFreshKeys.add(e.code);
+    else if (!pmFreshKeys.has(e.code)) return true;
+    return false;
+  }
+  e.preventDefault();
+  if (e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return true;
+  switch (e.code) {
+    case 'Escape': case 'KeyP': togglePause(); break;
+    case 'ArrowUp': pmSelect(pmIndex - 1); break;
+    case 'ArrowDown': pmSelect(pmIndex + 1); break;
+    case 'ArrowLeft': if (pmIndex === 3) pmChangeLevel(-1); break;
+    case 'ArrowRight': if (pmIndex === 3) pmChangeLevel(1); break;
+    case 'Enter': case 'Space': if (pmIndex === 3) pmChangeLevel(1); else pmActivate(pmIndex); break;
+  }
+  return true;
+});
 
 // ==== [UNIDAD 2] Récords ====
 
