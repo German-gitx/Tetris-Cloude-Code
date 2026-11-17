@@ -394,5 +394,18 @@ kbd {
 /* ==== [UNIDAD 1] Menú de pausa ==== */
 
 /* ==== [UNIDAD 2] Récords ==== */
+.records { margin: 12px 0; text-align: center; font-size: 0.85rem; }
+.records-title { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
+.records-table { margin: 0 auto; border-collapse: collapse; min-width: 240px; }
+.records-table th, .records-table td { padding: 3px 8px; border-bottom: 1px solid var(--border); text-align: right; }
+.records-table th:nth-child(2), .records-table td:nth-child(2) { text-align: left; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.records-table th { color: var(--label); font-weight: normal; }
+.records-hl td { background: var(--accent-bg); color: var(--accent-fg); font-weight: bold; }
+.records-empty, .records-stats { margin: 6px 0; color: var(--muted); }
+.records-form { display: flex; gap: 6px; justify-content: center; margin: 8px 0; }
+.records-input { width: 140px; padding: 5px 8px; border: 1px solid var(--btn-border); border-radius: 4px; background: var(--canvas-bg); color: var(--text); font: inherit; }
+.records-save, .records-reset { padding: 5px 10px; border: 1px solid var(--btn-border); border-radius: 4px; background: var(--btn-bg); color: var(--text); font: inherit; cursor: pointer; }
+.records-save:hover, .records-reset:hover { background: var(--btn-hover); }
+.records-reset { font-size: 0.75rem; color: var(--danger); }
 
 /* ==== [UNIDAD 3] Skins ==== */
