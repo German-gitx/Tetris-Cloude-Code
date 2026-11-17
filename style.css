@@ -396,3 +396,37 @@ kbd {
 /* ==== [UNIDAD 2] Récords ==== */
 
 /* ==== [UNIDAD 3] Skins ==== */
+
+#skin-picker {
+  position: fixed;
+  top: 16px;
+  right: 150px;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+}
+
+.skin-btn {
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.skin-btn:hover { background: var(--btn-hover); }
+
+.skin-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Neon: fondo del tablero siempre negro */
+[data-skin="neon"] #board,
+[data-skin="neon"] #next-canvas {
+  background: #000;
+}

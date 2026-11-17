@@ -4,7 +4,7 @@ const COLS = 10;
 const ROWS = 20;
 const BLOCK = 30;
 
-const COLORS = [
+let COLORS = [ // paleta activa (la sincroniza la skin, ver sección Skins)
   null,
   '#4dd0e1', // I - cyan
   '#ffd54f', // O - yellow
@@ -348,8 +348,8 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   drawCell(context, x, y, colorIndex, size, alpha); // la skin activa decide el aspecto (ver sección Skins)
 }
 
-// Dibujo de un bloque con el estilo Retro (por defecto). La unidad de Skins lo sustituye por la skin activa.
-function drawCell(context, x, y, colorIndex, size, alpha) {
+// Dibujo de un bloque con el estilo Retro (skin por defecto). drawCell (sección Skins) despacha según la skin activa.
+function drawCellRetro(context, x, y, colorIndex, size, alpha) {
   context.globalAlpha = alpha === GHOST ? themeVars.ghostAlpha : (alpha ?? 1);
   if (colorIndex === WILD) {
     // comodín: degradado arcoíris con marca ✦
@@ -530,7 +530,7 @@ function drawFreezeOverlay() {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = themeVars.grid;
+  ctx.strokeStyle = activeSkin.grid || themeVars.grid;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -759,3 +759,152 @@ function getStartLevel() { return 1; }
 // ==== [UNIDAD 2] Récords ====
 
 // ==== [UNIDAD 3] Skins ====
+
+const SKINS = {
+  retro: {
+    name: 'Retro',
+    palette: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#90caf9', '#ffb74d', '#cfd8dc'],
+    draw: drawCellRetro,
+  },
+  neon: {
+    name: 'Neon',
+    palette: [null, '#00f0ff', '#fff200', '#d500f9', '#39ff14', '#ff1744', '#2979ff', '#ff9100', '#ffffff'],
+    grid: 'rgba(0, 240, 255, 0.14)',
+    draw: drawCellNeon,
+  },
+  pastel: {
+    name: 'Pastel',
+    palette: [null, '#a8e6ef', '#fff1b8', '#d7b8ec', '#b9e8c0', '#f7b9b9', '#b8d4f5', '#fcd5a5', '#e6e6ee'],
+    draw: drawCellPastel,
+  },
+  pixel: {
+    name: 'Pixel',
+    palette: [null, '#29b6d1', '#f2c230', '#9c4dcc', '#4caf50', '#d63c3c', '#3f7fd6', '#ef8a1d', '#b0bec5'],
+    draw: drawCellPixel,
+  },
+};
+const SKIN_KEY = 'tetris.skin';
+let skinName = 'retro';
+let activeSkin = SKINS.retro;
+
+// Dibujo de un bloque con la skin activa
+function drawCell(context, x, y, colorIndex, size, alpha) {
+  context.globalAlpha = alpha === GHOST ? themeVars.ghostAlpha : (alpha ?? 1);
+  activeSkin.draw(context, x, y, colorIndex, size);
+  context.globalAlpha = 1;
+  context.shadowBlur = 0;
+  context.shadowColor = 'transparent';
+}
+
+// Relleno del comodín (degradado arcoíris) o color de la paleta
+function skinFill(context, x, y, colorIndex, size) {
+  if (colorIndex !== WILD) return COLORS[colorIndex];
+  const g = context.createLinearGradient(x * size, y * size, (x + 1) * size, (y + 1) * size);
+  ['#ff8a80', '#ffd54f', '#81c784', '#4dd0e1', '#ba68c8'].forEach((c, i) => g.addColorStop(i / 4, c));
+  return g;
+}
+
+function skinWildMark(context, x, y, size) {
+  context.fillStyle = 'rgba(255,255,255,0.9)';
+  context.font = `${Math.round(size * 0.5)}px sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText('✦', (x + 0.5) * size, (y + 0.5) * size + 1);
+}
+
+function drawCellNeon(context, x, y, colorIndex, size) {
+  const px = x * size + 3, py = y * size + 3, w = size - 6;
+  const color = COLORS[colorIndex];
+  context.shadowColor = color;
+  context.shadowBlur = 10;
+  context.fillStyle = skinFill(context, x, y, colorIndex, size);
+  context.globalAlpha *= 0.28;
+  context.fillRect(px, py, w, w);
+  context.globalAlpha /= 0.28;
+  context.strokeStyle = colorIndex === WILD ? '#ffffff' : color;
+  context.lineWidth = 2;
+  context.strokeRect(px, py, w, w);
+  context.shadowBlur = 0;
+  context.fillStyle = color;
+  context.fillRect(px + 4, py + 4, w - 8, w - 8);
+  if (colorIndex === WILD) skinWildMark(context, x, y, size);
+}
+
+function roundRectPath(context, x, y, w, h, r) {
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.arcTo(x + w, y, x + w, y + h, r);
+  context.arcTo(x + w, y + h, x, y + h, r);
+  context.arcTo(x, y + h, x, y, r);
+  context.arcTo(x, y, x + w, y, r);
+  context.closePath();
+}
+
+function drawCellPastel(context, x, y, colorIndex, size) {
+  const px = x * size + 2, py = y * size + 2, w = size - 4;
+  roundRectPath(context, px, py, w, w, size * 0.28);
+  context.fillStyle = skinFill(context, x, y, colorIndex, size);
+  context.fill();
+  context.strokeStyle = 'rgba(255,255,255,0.55)';
+  context.lineWidth = 1.5;
+  context.stroke();
+  // brillo suave
+  roundRectPath(context, px + 4, py + 3, w - 8, 5, 2.5);
+  context.fillStyle = 'rgba(255,255,255,0.5)';
+  context.fill();
+  if (colorIndex === WILD) skinWildMark(context, x, y, size);
+}
+
+function drawCellPixel(context, x, y, colorIndex, size) {
+  const px = x * size + 1, py = y * size + 1, w = size - 2;
+  context.fillStyle = skinFill(context, x, y, colorIndex, size);
+  context.fillRect(px, py, w, w);
+  // textura: tablero de ajedrez de píxeles 4x4 claros/oscuros
+  const u = Math.max(2, Math.floor(w / 6));
+  for (let i = 0; i < 6; i++)
+    for (let j = 0; j < 6; j++) {
+      if ((i + j) % 2) continue;
+      context.fillStyle = 'rgba(255,255,255,0.18)';
+      context.fillRect(px + i * u + 1, py + j * u + 1, u, u);
+    }
+  // bordes con luz arriba/izquierda y sombra abajo/derecha
+  context.fillStyle = 'rgba(255,255,255,0.45)';
+  context.fillRect(px, py, w, 2);
+  context.fillRect(px, py, 2, w);
+  context.fillStyle = 'rgba(0,0,0,0.4)';
+  context.fillRect(px, py + w - 2, w, 2);
+  context.fillRect(px + w - 2, py, 2, w);
+  if (colorIndex === WILD) skinWildMark(context, x, y, size);
+}
+
+function applySkin(name) {
+  if (!SKINS[name]) name = 'retro';
+  skinName = name;
+  activeSkin = SKINS[name];
+  COLORS = activeSkin.palette;
+  document.documentElement.dataset.skin = name;
+  try { localStorage.setItem(SKIN_KEY, name); } catch (e) { /* almacenamiento no disponible */ }
+  document.querySelectorAll('#skin-picker .skin-btn').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.skin === name));
+  });
+  if (started && current && next) { draw(); drawNext(); }
+}
+
+(function initSkins() {
+  const picker = document.getElementById('skin-picker');
+  picker.setAttribute('role', 'group');
+  picker.setAttribute('aria-label', 'Skin');
+  for (const key of Object.keys(SKINS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'skin-btn';
+    b.dataset.skin = key;
+    b.tabIndex = -1;
+    b.textContent = SKINS[key].name;
+    b.addEventListener('click', () => { applySkin(key); b.blur(); });
+    picker.appendChild(b);
+  }
+  let saved = null;
+  try { saved = localStorage.getItem(SKIN_KEY); } catch (e) { /* ignorar */ }
+  applySkin(saved);
+})();
